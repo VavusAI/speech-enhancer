@@ -4,7 +4,6 @@ class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
     console.log('SpeechEnhancer element connected');
 
-    // Basic UI without extra styling
     this.innerHTML = `
       <div>
         <button id="recordBtn">Start Recording</button>
@@ -44,8 +43,8 @@ class SpeechEnhancer extends HTMLElement {
         recordBtn.disabled = true;
         stopBtn.disabled = false;
       } catch (err) {
-        console.error(err);
-        transcriptBox.textContent = 'Mic access error.';
+        console.error('Microphone access error:', err);
+        transcriptBox.textContent = 'Microphone access denied.';
       }
     };
 
@@ -76,14 +75,29 @@ class SpeechEnhancer extends HTMLElement {
           method: 'POST',
           body: fd
         });
+
+        console.log('Fetch response status:', res.status);
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('Server returned an error:', errorText);
+          transcriptBox.textContent = `Server error: ${res.status} - ${res.statusText}`;
+          return;
+        }
+
         const data = await res.json();
-        console.log('Received JSON:', data);
-        transcriptBox.textContent = data.transcript ?? '[no transcript]';
+        console.log('Fetch response JSON:', data);
+
+        transcriptBox.textContent = data.transcript ?? '[No transcript returned]';
         audioElement.src = data.audio_url;
+        audioElement.load();
         downloadLink.href = data.audio_url;
       } catch (err) {
-        console.error(err);
-        transcriptBox.textContent = 'Processing error.';
+        console.error('Fetch or JSON error:', err);
+        transcriptBox.textContent = 'Client error during fetch or JSON parse.';
+      } finally {
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
       }
     }
   }
