@@ -5,29 +5,32 @@ class SpeechEnhancer extends HTMLElement {
     console.log('SpeechEnhancer element connected');
 
     this.innerHTML = `
-      <div style="font-family: Arial; padding: 20px;">
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto;">
         <h2>Assistive Speech Enhancer</h2>
         <div id="controls" style="margin-bottom: 20px;">
-          <label for="sttSelect">Choose STT Engine:</label>
-          <select id="sttSelect">
+          <label for="sttSelect"><strong>Choose STT Engine:</strong></label><br>
+          <select id="sttSelect" style="margin-bottom: 10px;">
             <option value="whisper">Whisper</option>
             <option value="vosk">Vosk</option>
-          </select><br><br>
+          </select><br>
 
-          <button id="recordBtn">Start Recording</button>
-          <button id="stopBtn" disabled>Stop Recording</button><br><br>
+          <button id="recordBtn" style="margin-top: 10px;">🎙 Start Recording</button>
+          <button id="stopBtn" disabled>⏹ Stop Recording</button><br><br>
 
           <input type="file" id="audioFile" accept="audio/*">
           <button id="uploadBtn">Upload & Convert</button>
         </div>
 
-        <h3>Transcription</h3>
-        <div><strong>Transcript:</strong> <span id="transcript" style="white-space: pre-wrap; font-style: italic;"></span></div>
+        <div style="margin-bottom: 20px;">
+          <h3>Transcript</h3>
+          <div id="transcriptBox" style="border: 1px solid #ccc; padding: 15px; background: #f9f9f9; border-radius: 8px; min-height: 50px; white-space: pre-wrap;"></div>
+        </div>
 
-        <h3>Enhanced Audio</h3>
-        <audio id="enhancedAudio" controls></audio>
-        <br>
-        <a id="downloadLink" href="#" download="enhanced.wav">Download Audio</a>
+        <div>
+          <h3>Enhanced Audio</h3>
+          <audio id="enhancedAudio" controls style="width: 100%;"></audio><br><br>
+          <a id="downloadLink" href="#" download="enhanced.wav">⬇️ Download Audio</a>
+        </div>
       </div>
     `;
 
@@ -36,7 +39,7 @@ class SpeechEnhancer extends HTMLElement {
     const uploadBtn = this.querySelector('#uploadBtn');
     const sttSelect = this.querySelector('#sttSelect');
     const audioFile = this.querySelector('#audioFile');
-    const transcriptDiv = this.querySelector('#transcript');
+    const transcriptBox = this.querySelector('#transcriptBox');
     const audioElement = this.querySelector('#enhancedAudio');
     const downloadLink = this.querySelector('#downloadLink');
 
@@ -57,12 +60,12 @@ class SpeechEnhancer extends HTMLElement {
         };
 
         mediaRecorder.start();
-        transcriptDiv.innerText = 'Recording...';
+        transcriptBox.innerText = 'Recording...';
         recordBtn.disabled = true;
         stopBtn.disabled = false;
       } catch (error) {
         console.error('Microphone access error:', error);
-        transcriptDiv.innerText = 'Microphone access denied or error occurred.';
+        transcriptBox.innerText = 'Microphone access denied or error occurred.';
       }
     };
 
@@ -71,14 +74,14 @@ class SpeechEnhancer extends HTMLElement {
         mediaRecorder.stop();
         recordBtn.disabled = false;
         stopBtn.disabled = true;
-        transcriptDiv.innerText = 'Processing...';
+        transcriptBox.innerText = 'Processing...';
       }
     };
 
     uploadBtn.onclick = () => {
       const file = audioFile.files[0];
       if (file) {
-        transcriptDiv.innerText = 'Uploading and processing...';
+        transcriptBox.innerText = 'Uploading and processing...';
         processAudio(file);
       }
     };
@@ -94,20 +97,18 @@ class SpeechEnhancer extends HTMLElement {
           body: formData
         });
 
-        if (!response.ok) {
-          throw new Error(`Server error: ${response.statusText}`);
-        }
+        if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
 
         const data = await response.json();
         console.log('Server responded with:', data);
 
-        transcriptDiv.innerText = data.transcript || 'No transcription returned.';
+        transcriptBox.innerText = data.transcript || 'No transcription returned.';
         audioElement.src = data.audio_url;
         audioElement.load();
         downloadLink.href = data.audio_url;
       } catch (err) {
         console.error('Error during processing:', err);
-        transcriptDiv.innerText = 'Error processing audio.';
+        transcriptBox.innerText = 'Error processing audio.';
       } finally {
         recordBtn.disabled = false;
         stopBtn.disabled = true;
