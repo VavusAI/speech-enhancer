@@ -1,12 +1,6 @@
 console.log('SpeechEnhancer script loaded');
 
 class SpeechEnhancer extends HTMLElement {
-  constructor() {
-    super();
-    // Bind the method so calling this.processAudio works
-    this.processAudio = this.processAudio.bind(this);
-  }
-
   connectedCallback() {
     console.log('SpeechEnhancer element connected');
 
@@ -17,8 +11,11 @@ class SpeechEnhancer extends HTMLElement {
         <input type="file" id="audioFile" accept="audio/*">
         <button id="uploadBtn">Upload & Convert</button><br><br>
 
+        <h3>Status:</h3>
+        <div id="statusBox" style="margin-bottom: 10px; color: #555;"></div>
+
         <h3>Transcript:</h3>
-        <textarea id="transcriptBox" rows="5" cols="60" readonly></textarea>
+        <textarea id="transcriptBox" rows="5" cols="60" readonly style="resize: vertical;"></textarea>
 
         <h3>Enhanced Audio:</h3>
         <audio id="enhancedAudio" controls></audio><br>
@@ -26,82 +23,87 @@ class SpeechEnhancer extends HTMLElement {
       </div>
     `;
 
-    this.recordBtn = this.querySelector('#recordBtn');
-    this.stopBtn = this.querySelector('#stopBtn');
-    this.uploadBtn = this.querySelector('#uploadBtn');
-    this.audioFile = this.querySelector('#audioFile');
-    this.transcriptBox = this.querySelector('#transcriptBox');
-    this.audioElement = this.querySelector('#enhancedAudio');
-    this.downloadLink = this.querySelector('#downloadLink');
+    const recordBtn = this.querySelector('#recordBtn');
+    const stopBtn = this.querySelector('#stopBtn');
+    const uploadBtn = this.querySelector('#uploadBtn');
+    const audioFile = this.querySelector('#audioFile');
+    const transcriptBox = this.querySelector('#transcriptBox');
+    const statusBox = this.querySelector('#statusBox');
+    const audioElement = this.querySelector('#enhancedAudio');
+    const downloadLink = this.querySelector('#downloadLink');
 
-    this.mediaRecorder = null;
-    this.recordedChunks = [];
+    let mediaRecorder;
+    let recordedChunks = [];
 
-    this.recordBtn.onclick = async () => {
+    recordBtn.onclick = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        this.recordedChunks = [];
-        this.mediaRecorder = new MediaRecorder(stream);
-        this.mediaRecorder.ondataavailable = e => this.recordedChunks.push(e.data);
-        this.mediaRecorder.onstop = () => this.processAudio(new Blob(this.recordedChunks, { type: 'audio/webm' }));
-        this.mediaRecorder.start();
-        this.transcriptBox.value = 'Recording...';
-        this.recordBtn.disabled = true;
-        this.stopBtn.disabled = false;
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+        mediaRecorder.onstop = () => processAudio(new Blob(recordedChunks, { type: 'audio/webm' }));
+        mediaRecorder.start();
+        statusBox.textContent = 'Recording...';
+        transcriptBox.value = '';
+        recordBtn.disabled = true;
+        stopBtn.disabled = false;
       } catch (err) {
-        console.error('Mic access error:', err);
-        this.transcriptBox.value = 'Microphone access denied.';
+        console.error('Microphone access error:', err);
+        statusBox.textContent = 'Microphone access denied.';
       }
     };
 
-    this.stopBtn.onclick = () => {
-      if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-        this.mediaRecorder.stop();
-        this.recordBtn.disabled = false;
-        this.stopBtn.disabled = true;
-        this.transcriptBox.value = 'Processing...';
+    stopBtn.onclick = () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        statusBox.textContent = 'Processing...';
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
       }
     };
 
-    this.uploadBtn.onclick = () => {
-      const file = this.audioFile.files[0];
+    uploadBtn.onclick = () => {
+      const file = audioFile.files[0];
       if (file) {
-        this.transcriptBox.value = 'Uploading...';
-        this.processAudio(file);
+        statusBox.textContent = 'Uploading and processing...';
+        transcriptBox.value = '';
+        processAudio(file);
       }
     };
-  }
 
-  async processAudio(blob) {
-    const fd = new FormData();
-    fd.append('audio', blob);
-    fd.append('engine', 'whisper');
-    try {
-      const res = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
-        method: 'POST',
-        body: fd
-      });
-      console.log('Fetch response status:', res.status);
+    async function processAudio(blob) {
+      const fd = new FormData();
+      fd.append('audio', blob);
+      fd.append('engine', 'whisper');
 
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error('Server error:', errText);
-        this.transcriptBox.value = `Error: ${res.status} ${res.statusText}`;
-        return;
+      try {
+        const res = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
+          method: 'POST',
+          body: fd
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error('Server response error:', errText);
+          statusBox.textContent = `Error: ${res.status} ${res.statusText}`;
+          return;
+        }
+
+        const data = await res.json();
+        console.log('Backend JSON:', data);
+
+        transcriptBox.value = data.transcript ?? '[No transcript returned]';
+        statusBox.textContent = 'Transcription complete.';
+        audioElement.src = data.audio_url;
+        audioElement.load();
+        downloadLink.href = data.audio_url;
+      } catch (err) {
+        console.error('Fetch or JSON error:', err);
+        statusBox.textContent = 'Error contacting server.';
+      } finally {
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
       }
-
-      const data = await res.json();
-      console.log('Backend JSON:', data);
-      this.transcriptBox.value = data.transcript ?? '[No transcript returned]';
-      this.audioElement.src = data.audio_url;
-      this.audioElement.load();
-      this.downloadLink.href = data.audio_url;
-    } catch (err) {
-      console.error('Fetch/JSON error:', err);
-      this.transcriptBox.value = 'Client error during fetch.';
-    } finally {
-      this.recordBtn.disabled = false;
-      this.stopBtn.disabled = true;
     }
   }
 }
