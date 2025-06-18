@@ -88,17 +88,26 @@ class SpeechEnhancer extends HTMLElement {
       formData.append('audio', audioBlob);
       formData.append('engine', sttSelect.value);
 
+      transcriptDiv.innerText = 'Sending to server…';
+      console.log('Sending request, engine:', sttSelect.value, audioBlob);
+
       try {
         const response = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
           method: 'POST',
           body: formData
         });
 
+        console.log('Fetch response status:', response.status);
+
         if (!response.ok) {
-          throw new Error(`Server error: ${response.statusText}`);
+          const text = await response.text();
+          console.error('Server returned error text:', text);
+          transcriptDiv.innerText = `Server error: ${response.status}`;
+          return;
         }
 
         const data = await response.json();
+        console.log('Response JSON:', data);
 
         transcriptDiv.innerText = data.transcript || 'No transcription returned.';
         audioElement.src = data.audio_url;
