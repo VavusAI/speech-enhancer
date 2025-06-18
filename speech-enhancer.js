@@ -1,46 +1,35 @@
-<script>
 console.log('SpeechEnhancer script loaded');
 
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
+    console.log('SpeechEnhancer element connected');
+
     this.innerHTML = `
       <div>
-        <h2>Assistive Speech Enhancer</h2>
-
-        <label for="sttSelect">Choose STT Engine:</label>
-        <select id="sttSelect">
-          <option value="whisper">Whisper</option>
-          <option value="vosk">Vosk</option>
-        </select>
-        <br><br>
-
-        <button id="recordBtn">Record</button>
-        <button id="stopBtn" disabled>Stop</button>
-        <br><br>
-
-        <div id="recordedAudioContainer"></div>
-        <br>
+        <button id="recordBtn">Start Recording</button>
+        <button id="stopBtn" disabled>Stop Recording</button><br><br>
+        <input type="file" id="audioFile" accept="audio/*">
+        <button id="uploadBtn">Upload & Convert</button><br><br>
 
         <h3>Transcript:</h3>
-        <textarea id="transcriptBox" rows="4" cols="60" readonly></textarea>
-        <br><br>
+        <div id="transcriptBox" style="white-space: pre-wrap; min-height: 2em; border: 1px solid #ccc; padding: 5px;"></div>
 
-        <h3>Enhanced Audio (Piper):</h3>
-        <audio id="enhancedAudio" controls></audio>
-        <br>
-        <a id="downloadLink" href="#" download="enhanced.wav">Download Enhanced Audio</a>
+        <h3>Enhanced Audio:</h3>
+        <audio id="enhancedAudio" controls></audio><br>
+        <a id="downloadLink" href="#" download="enhanced.wav">Download Audio</a>
       </div>
     `;
 
     const recordBtn = this.querySelector('#recordBtn');
     const stopBtn = this.querySelector('#stopBtn');
-    const sttSelect = this.querySelector('#sttSelect');
+    const uploadBtn = this.querySelector('#uploadBtn');
+    const audioFile = this.querySelector('#audioFile');
     const transcriptBox = this.querySelector('#transcriptBox');
-    const audioContainer = this.querySelector('#recordedAudioContainer');
     const audioElement = this.querySelector('#enhancedAudio');
     const downloadLink = this.querySelector('#downloadLink');
 
-    let mediaRecorder, recordedChunks = [];
+    let mediaRecorder;
+    let recordedChunks = [];
 
     recordBtn.onclick = async () => {
       try {
@@ -48,63 +37,70 @@ class SpeechEnhancer extends HTMLElement {
         recordedChunks = [];
         mediaRecorder = new MediaRecorder(stream);
         mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-        mediaRecorder.onstop = () => finalizeRecording();
+        mediaRecorder.onstop = () => processAudio(new Blob(recordedChunks, { type: 'audio/webm' }));
         mediaRecorder.start();
+        transcriptBox.textContent = 'Recording...';
         recordBtn.disabled = true;
         stopBtn.disabled = false;
-        transcriptBox.value = 'Recording...';
-        audioContainer.innerHTML = '';
-      } catch {
-        transcriptBox.value = 'Microphone access error.';
+      } catch (err) {
+        console.error('Microphone access error:', err);
+        transcriptBox.textContent = 'Microphone access denied.';
       }
     };
 
     stopBtn.onclick = () => {
-      if (mediaRecorder?.state === 'recording') {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
         recordBtn.disabled = false;
         stopBtn.disabled = true;
-        transcriptBox.value = 'Processing audio...';
+        transcriptBox.textContent = 'Processing...';
       }
     };
 
-    function finalizeRecording() {
-      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-      const url = URL.createObjectURL(blob);
-      audioContainer.innerHTML = '';
-      const download = document.createElement('a');
-      download.href = url;
-      download.download = 'input_audio.webm';
-      download.textContent = 'Download Recorded Audio';
-      audioContainer.appendChild(download);
-
-      processAudio(blob);
-    }
+    uploadBtn.onclick = () => {
+      const file = audioFile.files[0];
+      if (file) {
+        transcriptBox.textContent = 'Uploading...';
+        processAudio(file);
+      }
+    };
 
     async function processAudio(blob) {
       const fd = new FormData();
       fd.append('audio', blob);
-      fd.append('engine', sttSelect.value);
+      fd.append('engine', 'whisper');
 
       try {
         const res = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
-          method: 'POST', body: fd
+          method: 'POST',
+          body: fd
         });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+        console.log('Fetch response status:', res.status);
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('Server returned an error:', errorText);
+          transcriptBox.textContent = `Server error: ${res.status} - ${res.statusText}`;
+          return;
+        }
+
         const data = await res.json();
-        transcriptBox.value = data.transcript || '[No transcript]';
+        console.log('Fetch response JSON:', data);
+
+        transcriptBox.textContent = data.transcript ?? '[No transcript returned]';
         audioElement.src = data.audio_url;
-        downloadLink.href = data.audio_url;
         audioElement.load();
+        downloadLink.href = data.audio_url;
       } catch (err) {
-        console.error(err);
-        transcriptBox.value = 'Error processing audio.';
+        console.error('Fetch or JSON error:', err);
+        transcriptBox.textContent = 'Client error during fetch or JSON parse.';
+      } finally {
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
       }
     }
   }
 }
 
 customElements.define('speech-enhancer', SpeechEnhancer);
-</script>
-
-<speech-enhancer></speech-enhancer>
