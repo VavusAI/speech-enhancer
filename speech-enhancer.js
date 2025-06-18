@@ -22,7 +22,7 @@ class SpeechEnhancer extends HTMLElement {
         </div>
 
         <h3>Transcription</h3>
-        <div id="transcript" style="white-space: pre-wrap;"></div>
+        <div><strong>Transcript:</strong> <span id="transcript" style="white-space: pre-wrap; font-style: italic;"></span></div>
 
         <h3>Enhanced Audio</h3>
         <audio id="enhancedAudio" controls></audio>
@@ -88,26 +88,18 @@ class SpeechEnhancer extends HTMLElement {
       formData.append('audio', audioBlob);
       formData.append('engine', sttSelect.value);
 
-      transcriptDiv.innerText = 'Sending to server…';
-      console.log('Sending request, engine:', sttSelect.value, audioBlob);
-
       try {
         const response = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
           method: 'POST',
           body: formData
         });
 
-        console.log('Fetch response status:', response.status);
-
         if (!response.ok) {
-          const text = await response.text();
-          console.error('Server returned error text:', text);
-          transcriptDiv.innerText = `Server error: ${response.status}`;
-          return;
+          throw new Error(`Server error: ${response.statusText}`);
         }
 
         const data = await response.json();
-        console.log('Response JSON:', data);
+        console.log('Server responded with:', data);
 
         transcriptDiv.innerText = data.transcript || 'No transcription returned.';
         audioElement.src = data.audio_url;
