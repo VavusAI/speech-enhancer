@@ -1,119 +1,110 @@
+<script>
 console.log('SpeechEnhancer script loaded');
 
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
-    console.log('SpeechEnhancer element connected');
-
     this.innerHTML = `
-      <div style="font-family: Arial; padding: 20px;">
+      <div>
         <h2>Assistive Speech Enhancer</h2>
-        <div id="controls" style="margin-bottom: 20px;">
-          <label for="sttSelect">Choose STT Engine:</label>
-          <select id="sttSelect">
-            <option value="whisper">Whisper</option>
-            <option value="vosk">Vosk</option>
-          </select><br><br>
 
-          <button id="recordBtn">Start Recording</button>
-          <button id="stopBtn" disabled>Stop Recording</button><br><br>
+        <label for="sttSelect">Choose STT Engine:</label>
+        <select id="sttSelect">
+          <option value="whisper">Whisper</option>
+          <option value="vosk">Vosk</option>
+        </select>
+        <br><br>
 
-          <input type="file" id="audioFile" accept="audio/*">
-          <button id="uploadBtn">Upload & Convert</button>
-        </div>
+        <button id="recordBtn">Record</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <br><br>
 
-        <h3>Transcription</h3>
-        <div><strong>Transcript:</strong> <span id="transcript" style="white-space: pre-wrap; font-style: italic;"></span></div>
+        <div id="recordedAudioContainer"></div>
+        <br>
 
-        <h3>Enhanced Audio</h3>
+        <h3>Transcript:</h3>
+        <textarea id="transcriptBox" rows="4" cols="60" readonly></textarea>
+        <br><br>
+
+        <h3>Enhanced Audio (Piper):</h3>
         <audio id="enhancedAudio" controls></audio>
         <br>
-        <a id="downloadLink" href="#" download="enhanced.wav">Download Audio</a>
+        <a id="downloadLink" href="#" download="enhanced.wav">Download Enhanced Audio</a>
       </div>
     `;
 
     const recordBtn = this.querySelector('#recordBtn');
     const stopBtn = this.querySelector('#stopBtn');
-    const uploadBtn = this.querySelector('#uploadBtn');
     const sttSelect = this.querySelector('#sttSelect');
-    const audioFile = this.querySelector('#audioFile');
-    const transcriptDiv = this.querySelector('#transcript');
+    const transcriptBox = this.querySelector('#transcriptBox');
+    const audioContainer = this.querySelector('#recordedAudioContainer');
     const audioElement = this.querySelector('#enhancedAudio');
     const downloadLink = this.querySelector('#downloadLink');
 
-    let mediaRecorder;
-    let recordedChunks = [];
+    let mediaRecorder, recordedChunks = [];
 
     recordBtn.onclick = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recordedChunks = [];
         mediaRecorder = new MediaRecorder(stream);
-
-        mediaRecorder.ondataavailable = event => recordedChunks.push(event.data);
-
-        mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-          processAudio(audioBlob);
-        };
-
+        mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+        mediaRecorder.onstop = () => finalizeRecording();
         mediaRecorder.start();
-        transcriptDiv.innerText = 'Recording...';
         recordBtn.disabled = true;
         stopBtn.disabled = false;
-      } catch (error) {
-        console.error('Microphone access error:', error);
-        transcriptDiv.innerText = 'Microphone access denied or error occurred.';
+        transcriptBox.value = 'Recording...';
+        audioContainer.innerHTML = '';
+      } catch {
+        transcriptBox.value = 'Microphone access error.';
       }
     };
 
     stopBtn.onclick = () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
+      if (mediaRecorder?.state === 'recording') {
         mediaRecorder.stop();
         recordBtn.disabled = false;
         stopBtn.disabled = true;
-        transcriptDiv.innerText = 'Processing...';
+        transcriptBox.value = 'Processing audio...';
       }
     };
 
-    uploadBtn.onclick = () => {
-      const file = audioFile.files[0];
-      if (file) {
-        transcriptDiv.innerText = 'Uploading and processing...';
-        processAudio(file);
-      }
-    };
+    function finalizeRecording() {
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      const url = URL.createObjectURL(blob);
+      audioContainer.innerHTML = '';
+      const download = document.createElement('a');
+      download.href = url;
+      download.download = 'input_audio.webm';
+      download.textContent = 'Download Recorded Audio';
+      audioContainer.appendChild(download);
 
-    async function processAudio(audioBlob) {
-      const formData = new FormData();
-      formData.append('audio', audioBlob);
-      formData.append('engine', sttSelect.value);
+      processAudio(blob);
+    }
+
+    async function processAudio(blob) {
+      const fd = new FormData();
+      fd.append('audio', blob);
+      fd.append('engine', sttSelect.value);
 
       try {
-        const response = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
-          method: 'POST',
-          body: formData
+        const res = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
+          method: 'POST', body: fd
         });
-
-        if (!response.ok) {
-          throw new Error(`Server error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log('Server responded with:', data);
-
-        transcriptDiv.innerText = data.transcript || 'No transcription returned.';
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json();
+        transcriptBox.value = data.transcript || '[No transcript]';
         audioElement.src = data.audio_url;
-        audioElement.load();
         downloadLink.href = data.audio_url;
+        audioElement.load();
       } catch (err) {
-        console.error('Error during processing:', err);
-        transcriptDiv.innerText = 'Error processing audio.';
-      } finally {
-        recordBtn.disabled = false;
-        stopBtn.disabled = true;
+        console.error(err);
+        transcriptBox.value = 'Error processing audio.';
       }
     }
   }
 }
 
 customElements.define('speech-enhancer', SpeechEnhancer);
+</script>
+
+<speech-enhancer></speech-enhancer>
