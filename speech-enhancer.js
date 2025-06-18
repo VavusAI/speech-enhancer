@@ -5,29 +5,28 @@ class SpeechEnhancer extends HTMLElement {
     console.log('SpeechEnhancer element connected');
 
     this.innerHTML = `
-      <div>
+      <div style="font-family: Arial; padding: 20px;">
         <h2>Assistive Speech Enhancer</h2>
+        <div id="controls" style="margin-bottom: 20px;">
+          <label for="sttSelect">Choose STT Engine:</label>
+          <select id="sttSelect">
+            <option value="whisper">Whisper</option>
+            <option value="vosk">Vosk</option>
+          </select><br><br>
 
-        <label for="sttSelect">Choose STT Engine:</label>
-        <select id="sttSelect">
-          <option value="whisper">Whisper</option>
-          <option value="vosk">Vosk</option>
-        </select><br><br>
+          <button id="recordBtn">Start Recording</button>
+          <button id="stopBtn" disabled>Stop Recording</button><br><br>
 
-        <button id="recordBtn">Start Recording</button>
-        <button id="stopBtn" disabled>Stop Recording</button><br><br>
+          <input type="file" id="audioFile" accept="audio/*">
+          <button id="uploadBtn">Upload & Convert</button>
+        </div>
 
-        <input type="file" id="audioFile" accept="audio/*">
-        <button id="uploadBtn">Upload & Convert</button><br><br>
+        <h3>Transcription</h3>
+        <div><strong>Transcript:</strong> <span id="transcript" style="white-space: pre-wrap; font-style: italic;"></span></div>
 
-        <h3>Status:</h3>
-        <div id="statusBox" style="margin-bottom: 10px; color: #555;"></div>
-
-        <h3>Transcript:</h3>
-        <textarea id="transcriptBox" rows="5" cols="60" readonly style="resize: vertical;"></textarea>
-
-        <h3>Enhanced Audio:</h3>
-        <audio id="enhancedAudio" controls></audio><br>
+        <h3>Enhanced Audio</h3>
+        <audio id="enhancedAudio" controls></audio>
+        <br>
         <a id="downloadLink" href="#" download="enhanced.wav">Download Audio</a>
       </div>
     `;
@@ -37,8 +36,7 @@ class SpeechEnhancer extends HTMLElement {
     const uploadBtn = this.querySelector('#uploadBtn');
     const sttSelect = this.querySelector('#sttSelect');
     const audioFile = this.querySelector('#audioFile');
-    const statusBox = this.querySelector('#statusBox');
-    const transcriptBox = this.querySelector('#transcriptBox');
+    const transcriptDiv = this.querySelector('#transcript');
     const audioElement = this.querySelector('#enhancedAudio');
     const downloadLink = this.querySelector('#downloadLink');
 
@@ -50,66 +48,66 @@ class SpeechEnhancer extends HTMLElement {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recordedChunks = [];
         mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-        mediaRecorder.onstop = () => processAudio(new Blob(recordedChunks, { type: 'audio/webm' }));
+
+        mediaRecorder.ondataavailable = event => recordedChunks.push(event.data);
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+          processAudio(audioBlob);
+        };
+
         mediaRecorder.start();
-        statusBox.textContent = 'Recording...';
-        transcriptBox.value = '';
+        transcriptDiv.innerText = 'Recording...';
         recordBtn.disabled = true;
         stopBtn.disabled = false;
-      } catch (err) {
-        console.error('Microphone access error:', err);
-        statusBox.textContent = 'Microphone access denied.';
+      } catch (error) {
+        console.error('Microphone access error:', error);
+        transcriptDiv.innerText = 'Microphone access denied or error occurred.';
       }
     };
 
     stopBtn.onclick = () => {
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
-        statusBox.textContent = 'Processing...';
         recordBtn.disabled = false;
         stopBtn.disabled = true;
+        transcriptDiv.innerText = 'Processing...';
       }
     };
 
     uploadBtn.onclick = () => {
       const file = audioFile.files[0];
       if (file) {
-        statusBox.textContent = 'Uploading and processing...';
-        transcriptBox.value = '';
+        transcriptDiv.innerText = 'Uploading and processing...';
         processAudio(file);
       }
     };
 
-    async function processAudio(blob) {
-      const fd = new FormData();
-      fd.append('audio', blob);
-      fd.append('engine', sttSelect.value);
+    async function processAudio(audioBlob) {
+      const formData = new FormData();
+      formData.append('audio', audioBlob);
+      formData.append('engine', sttSelect.value);
 
       try {
-        const res = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
+        const response = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
           method: 'POST',
-          body: fd
+          body: formData
         });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          console.error('Server response error:', errText);
-          statusBox.textContent = `Error: ${res.status} ${res.statusText}`;
-          return;
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.statusText}`);
         }
 
-        const data = await res.json();
-        console.log('Backend JSON:', data);
+        const data = await response.json();
+        console.log('Server responded with:', data);
 
-        transcriptBox.value = data.transcript ?? '[No transcript returned]';
-        statusBox.textContent = 'Transcription complete.';
+        transcriptDiv.innerText = data.transcript || 'No transcription returned.';
         audioElement.src = data.audio_url;
         audioElement.load();
         downloadLink.href = data.audio_url;
       } catch (err) {
-        console.error('Fetch or JSON error:', err);
-        statusBox.textContent = 'Error contacting server.';
+        console.error('Error during processing:', err);
+        transcriptDiv.innerText = 'Error processing audio.';
       } finally {
         recordBtn.disabled = false;
         stopBtn.disabled = true;
