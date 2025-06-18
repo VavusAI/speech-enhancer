@@ -93,14 +93,23 @@ class SpeechEnhancer extends HTMLElement {
           method: 'POST',
           body: formData
         });
+
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.statusText}`);
+        }
+
         const data = await response.json();
 
         transcriptDiv.innerText = data.transcript || 'No transcription returned.';
         audioElement.src = data.audio_url;
+        audioElement.load();
         downloadLink.href = data.audio_url;
       } catch (err) {
         console.error('Error during processing:', err);
         transcriptDiv.innerText = 'Error processing audio.';
+      } finally {
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
       }
     }
   }
