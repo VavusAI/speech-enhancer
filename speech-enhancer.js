@@ -12,7 +12,7 @@ class SpeechEnhancer extends HTMLElement {
         <button id="uploadBtn">Upload & Convert</button><br><br>
 
         <h3>Transcript:</h3>
-        <div id="transcriptBox" style="white-space: pre-wrap; min-height: 2em; border: 1px solid #ccc; padding: 5px;"></div>
+        <textarea id="transcriptBox" rows="5" cols="60" readonly style="resize: vertical;"></textarea>
 
         <h3>Enhanced Audio:</h3>
         <audio id="enhancedAudio" controls></audio><br>
@@ -39,12 +39,12 @@ class SpeechEnhancer extends HTMLElement {
         mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
         mediaRecorder.onstop = () => processAudio(new Blob(recordedChunks, { type: 'audio/webm' }));
         mediaRecorder.start();
-        transcriptBox.textContent = 'Recording...';
+        transcriptBox.value = 'Recording...';
         recordBtn.disabled = true;
         stopBtn.disabled = false;
       } catch (err) {
         console.error('Microphone access error:', err);
-        transcriptBox.textContent = 'Microphone access denied.';
+        transcriptBox.value = 'Microphone access denied.';
       }
     };
 
@@ -53,14 +53,14 @@ class SpeechEnhancer extends HTMLElement {
         mediaRecorder.stop();
         recordBtn.disabled = false;
         stopBtn.disabled = true;
-        transcriptBox.textContent = 'Processing...';
+        transcriptBox.value = 'Processing...';
       }
     };
 
     uploadBtn.onclick = () => {
       const file = audioFile.files[0];
       if (file) {
-        transcriptBox.textContent = 'Uploading...';
+        transcriptBox.value = 'Uploading...';
         processAudio(file);
       }
     };
@@ -76,25 +76,23 @@ class SpeechEnhancer extends HTMLElement {
           body: fd
         });
 
-        console.log('Fetch response status:', res.status);
-
         if (!res.ok) {
-          const errorText = await res.text();
-          console.error('Server returned an error:', errorText);
-          transcriptBox.textContent = `Server error: ${res.status} - ${res.statusText}`;
+          const errText = await res.text();
+          console.error('Server response error:', errText);
+          transcriptBox.value = `Error: ${res.status} ${res.statusText}`;
           return;
         }
 
         const data = await res.json();
-        console.log('Fetch response JSON:', data);
+        console.log('Backend JSON:', data);
 
-        transcriptBox.textContent = data.transcript ?? '[No transcript returned]';
+        transcriptBox.value = data.transcript ?? '[No transcript returned]';
         audioElement.src = data.audio_url;
         audioElement.load();
         downloadLink.href = data.audio_url;
       } catch (err) {
         console.error('Fetch or JSON error:', err);
-        transcriptBox.textContent = 'Client error during fetch or JSON parse.';
+        transcriptBox.value = 'Error contacting server.';
       } finally {
         recordBtn.disabled = false;
         stopBtn.disabled = true;
