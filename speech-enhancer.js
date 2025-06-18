@@ -1,50 +1,108 @@
+console.log('SpeechEnhancer script loaded');
+
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
+    console.log('SpeechEnhancer element connected');
+
     this.innerHTML = `
-      <div>
-        <button id="startBtn">Start Recording</button>
-        <button id="stopBtn" disabled>Stop</button>
-        <p id="status">Idle</p>
+      <div style="font-family: Arial; padding: 20px;">
+        <h2>Assistive Speech Enhancer</h2>
+        <div id="controls" style="margin-bottom: 20px;">
+          <label for="sttSelect">Choose STT Engine:</label>
+          <select id="sttSelect">
+            <option value="whisper">Whisper</option>
+            <option value="vosk">Vosk</option>
+          </select><br><br>
+
+          <button id="recordBtn">Start Recording</button>
+          <button id="stopBtn" disabled>Stop Recording</button><br><br>
+
+          <input type="file" id="audioFile" accept="audio/*">
+          <button id="uploadBtn">Upload & Convert</button>
+        </div>
+
+        <h3>Transcription</h3>
+        <div id="transcript" style="white-space: pre-wrap;"></div>
+
+        <h3>Enhanced Audio</h3>
+        <audio id="enhancedAudio" controls></audio>
+        <br>
+        <a id="downloadLink" href="#" download="enhanced.wav">Download Audio</a>
       </div>
     `;
 
-    const status = this.querySelector('#status');
-    const startBtn = this.querySelector('#startBtn');
+    const recordBtn = this.querySelector('#recordBtn');
     const stopBtn = this.querySelector('#stopBtn');
+    const uploadBtn = this.querySelector('#uploadBtn');
+    const sttSelect = this.querySelector('#sttSelect');
+    const audioFile = this.querySelector('#audioFile');
+    const transcriptDiv = this.querySelector('#transcript');
+    const audioElement = this.querySelector('#enhancedAudio');
+    const downloadLink = this.querySelector('#downloadLink');
 
     let mediaRecorder;
-    let chunks = [];
+    let recordedChunks = [];
 
-    startBtn.onclick = async () => {
+    recordBtn.onclick = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recordedChunks = [];
         mediaRecorder = new MediaRecorder(stream);
-        chunks = [];
 
-        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+        mediaRecorder.ondataavailable = event => recordedChunks.push(event.data);
+
         mediaRecorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          console.log('Recording complete', blob);
-          status.innerText = 'Recorded!';
-          // You can send this blob to your backend here.
+          const audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+          processAudio(audioBlob);
         };
 
         mediaRecorder.start();
-        status.innerText = 'Recording...';
-        startBtn.disabled = true;
+        transcriptDiv.innerText = 'Recording...';
+        recordBtn.disabled = true;
         stopBtn.disabled = false;
-      } catch (err) {
-        console.error('Mic error:', err);
-        status.innerText = 'Mic access denied';
+      } catch (error) {
+        console.error('Microphone access error:', error);
+        transcriptDiv.innerText = 'Microphone access denied or error occurred.';
       }
     };
 
     stopBtn.onclick = () => {
-      mediaRecorder.stop();
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      status.innerText = 'Stopping...';
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+        transcriptDiv.innerText = 'Processing...';
+      }
     };
+
+    uploadBtn.onclick = () => {
+      const file = audioFile.files[0];
+      if (file) {
+        transcriptDiv.innerText = 'Uploading and processing...';
+        processAudio(file);
+      }
+    };
+
+    async function processAudio(audioBlob) {
+      const formData = new FormData();
+      formData.append('audio', audioBlob);
+      formData.append('engine', sttSelect.value);
+
+      try {
+        const response = await fetch('https://your-backend-url.com/process', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        transcriptDiv.innerText = data.transcript || 'No transcription returned.';
+        audioElement.src = data.audio_url;
+        downloadLink.href = data.audio_url;
+      } catch (err) {
+        console.error('Error during processing:', err);
+        transcriptDiv.innerText = 'Error processing audio.';
+      }
+    }
   }
 }
 
