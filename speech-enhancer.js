@@ -6,8 +6,17 @@ class SpeechEnhancer extends HTMLElement {
 
     this.innerHTML = `
       <div>
+        <h2>Assistive Speech Enhancer</h2>
+
+        <label for="sttSelect">Choose STT Engine:</label>
+        <select id="sttSelect">
+          <option value="whisper">Whisper</option>
+          <option value="vosk">Vosk</option>
+        </select><br><br>
+
         <button id="recordBtn">Start Recording</button>
         <button id="stopBtn" disabled>Stop Recording</button><br><br>
+
         <input type="file" id="audioFile" accept="audio/*">
         <button id="uploadBtn">Upload & Convert</button><br><br>
 
@@ -26,9 +35,10 @@ class SpeechEnhancer extends HTMLElement {
     const recordBtn = this.querySelector('#recordBtn');
     const stopBtn = this.querySelector('#stopBtn');
     const uploadBtn = this.querySelector('#uploadBtn');
+    const sttSelect = this.querySelector('#sttSelect');
     const audioFile = this.querySelector('#audioFile');
-    const transcriptBox = this.querySelector('#transcriptBox');
     const statusBox = this.querySelector('#statusBox');
+    const transcriptBox = this.querySelector('#transcriptBox');
     const audioElement = this.querySelector('#enhancedAudio');
     const downloadLink = this.querySelector('#downloadLink');
 
@@ -74,7 +84,7 @@ class SpeechEnhancer extends HTMLElement {
     async function processAudio(blob) {
       const fd = new FormData();
       fd.append('audio', blob);
-      fd.append('engine', 'whisper');
+      fd.append('engine', sttSelect.value);
 
       try {
         const res = await fetch('https://6b4e-89-136-179-174.ngrok-free.app/process', {
