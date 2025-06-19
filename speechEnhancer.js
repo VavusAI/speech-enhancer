@@ -1,10 +1,8 @@
-const BACKEND_URL = 'https://9d1d-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
-
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
     this.innerHTML = `
-      <div style="font-family: sans-serif; background: black; color: white; padding: 20px;">
-        <h1>Speech Enhancer</h1>
+      <div style="font-family: sans-serif; background: black; color: white; padding: 20px; border-radius: 8px;">
+        <h2>Speech Enhancer</h2>
 
         <label for="modelSelect">Choose STT Model:</label><br>
         <select id="modelSelect">
@@ -19,10 +17,10 @@ class SpeechEnhancer extends HTMLElement {
         <button id="uploadBtn">Upload & Convert</button><br><br>
 
         <h3>Transcription:</h3>
-        <div id="transcriptBox" style="white-space: pre-wrap; border: 1px solid white; padding: 10px; margin: 10px 0; min-height: 60px; background: #111;"></div><br>
+        <div id="transcriptBox" style="white-space: pre-wrap; border: 1px solid white; padding: 10px; min-height: 60px; background: #111;"></div><br>
 
         <button id="ttsBtn" disabled>🔊 Synthesize with Piper</button><br>
-        <audio id="audioPlayer" controls style="display:none;"></audio>
+        <audio id="audioPlayer" controls style="display:none; margin-top: 10px;"></audio>
         <a id="downloadLink" style="display:none;" download="piper_output.wav">⬇️ Download Audio</a>
       </div>
     `;
@@ -37,6 +35,7 @@ class SpeechEnhancer extends HTMLElement {
     const audioPlayer = this.querySelector('#audioPlayer');
     const downloadLink = this.querySelector('#downloadLink');
 
+    const BACKEND_URL = 'https://9d1d-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
     let mediaRecorder, audioChunks = [];
 
     recordBtn.onclick = async () => {
@@ -56,16 +55,16 @@ class SpeechEnhancer extends HTMLElement {
         stopBtn.disabled = false;
       } catch (err) {
         alert("Microphone access denied.");
-        console.error(err);
+        console.error("Mic access error:", err);
       }
     };
 
     stopBtn.onclick = () => {
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
-        recordBtn.disabled = false;
-        stopBtn.disabled = true;
       }
+      recordBtn.disabled = false;
+      stopBtn.disabled = true;
     };
 
     uploadBtn.onclick = () => {
@@ -91,7 +90,7 @@ class SpeechEnhancer extends HTMLElement {
         })
         .catch(err => {
           transcriptBox.textContent = 'Error: ' + err.message;
-          console.error(err);
+          console.error("STT error:", err);
         });
     }
 
@@ -110,7 +109,7 @@ class SpeechEnhancer extends HTMLElement {
         })
         .catch(err => {
           alert('Synthesis failed: ' + err.message);
-          console.error(err);
+          console.error("TTS error:", err);
         });
     };
   }
