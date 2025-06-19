@@ -1,13 +1,13 @@
-// speech-enhancer.js
 // === Configuration ===
-const NGROK_URL = 'https://267b-2a02-2f0b-a209-2500-2b52-36b2-387d-62.ngrok-free.app';
+// 🔄 UPDATE this to your current tunnel URL (copy–paste the full HTTPS address ngrok prints)
+const NGROK_URL = 'https://334d-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
 
 let mediaRecorder = null;
 let audioChunks = [];
 let selectedModel = 'whisper';
 let latestAudioURL = null;
 
-// === Inject Styling ===
+// Inject basic styling
 const style = document.createElement('style');
 style.textContent = `
   body { font-family: Arial, sans-serif; margin: 20px; max-width: 600px; }
@@ -18,10 +18,9 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// === Build UI Dynamically ===
+// Build UI
 document.body.innerHTML = `
   <h1>Speech Enhancer</h1>
-
   <label for="model-select">Choose Speech-to-Text Model:</label>
   <select id="model-select">
     <option value="whisper">Whisper</option>
@@ -42,22 +41,19 @@ document.body.innerHTML = `
   <a id="download-link">⬇️ Download Piper Audio</a>
 `;
 
-// === DOM References ===
-const modelSelect         = document.getElementById('model-select');
-const startBtn            = document.getElementById('start-recording');
-const stopBtn             = document.getElementById('stop-recording');
-const recordingIndicator  = document.getElementById('recording-indicator');
-const uploadInput         = document.getElementById('audio-upload');
-const transcriptBox       = document.getElementById('transcript');
-const playBtn             = document.getElementById('play-tts');
-const downloadLink        = document.getElementById('download-link');
+const modelSelect        = document.getElementById('model-select');
+const startBtn           = document.getElementById('start-recording');
+const stopBtn            = document.getElementById('stop-recording');
+const recordingIndicator = document.getElementById('recording-indicator');
+const uploadInput        = document.getElementById('audio-upload');
+const transcriptBox      = document.getElementById('transcript');
+const playBtn            = document.getElementById('play-tts');
+const downloadLink       = document.getElementById('download-link');
 
-// === Initial UI State ===
-stopBtn.disabled      = true;
 playBtn.disabled      = true;
 downloadLink.style.display = 'none';
 
-// === Event Handlers ===
+// Handlers
 modelSelect.addEventListener('change', () => {
   selectedModel = modelSelect.value;
 });
@@ -69,12 +65,12 @@ startBtn.addEventListener('click', async () => {
     audioChunks = [];
 
     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-    mediaRecorder.onstop = handleRecordingStop;
+    mediaRecorder.onstop        = handleRecordingStop;
 
     mediaRecorder.start();
     recordingIndicator.style.display = 'block';
     startBtn.disabled = true;
-    stopBtn.disabled = false;
+    stopBtn.disabled  = false;
   } catch (err) {
     console.error('Microphone access error:', err);
     alert('Cannot access microphone. Please allow permission.');
@@ -87,33 +83,27 @@ stopBtn.addEventListener('click', () => {
   }
 });
 
-uploadInput.addEventListener('change', async (e) => {
+uploadInput.addEventListener('change', async e => {
   const file = e.target.files[0];
-  if (file) {
-    await sendToBackend(file);
-  }
+  if (file) await sendToBackend(file);
 });
 
 playBtn.addEventListener('click', () => {
-  if (latestAudioURL) {
-    new Audio(latestAudioURL).play();
-  }
+  if (latestAudioURL) new Audio(latestAudioURL).play();
 });
 
-// === Helper Functions ===
 async function handleRecordingStop() {
   recordingIndicator.style.display = 'none';
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
+  startBtn.disabled            = false;
+  stopBtn.disabled             = true;
 
   const blob = new Blob(audioChunks, { type: 'audio/wav' });
   await sendToBackend(blob);
 }
 
 async function sendToBackend(audioBlob) {
-  // Reset UI
-  transcriptBox.value = 'Processing...';
-  playBtn.disabled = true;
+  transcriptBox.value        = 'Processing…';
+  playBtn.disabled           = true;
   downloadLink.style.display = 'none';
 
   const formData = new FormData();
@@ -125,23 +115,27 @@ async function sendToBackend(audioBlob) {
       method: 'POST',
       body: formData
     });
-    if (!resp.ok) throw new Error(`Server responded ${resp.status}`);
-    const data = await resp.json();
-
-    // Update transcript
-    transcriptBox.value = data.transcript || '[No transcription received]';
-
-    // Handle Piper audio
-    if (data.audio_url) {
-      latestAudioURL = data.audio_url;
-      playBtn.disabled = false;
-      downloadLink.href = latestAudioURL;
-      downloadLink.download = 'piper_output.wav';
-      downloadLink.style.display = 'inline';
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${errText || resp.statusText}`);
     }
+    const data = await resp.json();
+    transcriptBox.value = data.transcript || '';
+
+    if (!data.audio_url) {
+      throw new Error('No audio_url returned by server');
+    }
+
+    latestAudioURL    = data.audio_url;
+    playBtn.disabled  = false;
+    downloadLink.href = data.audio_url;
+    downloadLink.download = 'piper_output.wav';
+    downloadLink.style.display = 'inline';
+    new Audio(data.audio_url).play();
+
   } catch (err) {
     console.error('Backend error:', err);
-    alert('Error processing audio. Check console for details.');
-    transcriptBox.value = '';
+    transcriptBox.value = `Error: ${err.message}`;
+    alert(`Error processing audio:\n${err.message}`);
   }
 }
