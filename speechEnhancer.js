@@ -1,43 +1,43 @@
+const BACKEND_URL = 'https://9d1d-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
+
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
     this.innerHTML = `
-      <div style="font-family: Arial; padding: 1em; border: 2px solid #eee; border-radius: 10px;">
-        <h2>Speech Enhancer</h2>
-        <label for="modelSelect">STT Model:</label>
+      <div style="font-family: sans-serif; background: black; color: white; padding: 20px;">
+        <h1>Speech Enhancer</h1>
+
+        <label for="modelSelect">Choose STT Model:</label><br>
         <select id="modelSelect">
           <option value="whisper">Whisper</option>
           <option value="vosk">Vosk</option>
-        </select>
-        <br/><br/>
+        </select><br><br>
 
-        <button id="recordBtn">🎤 Start Recording</button>
-        <button id="stopBtn" disabled>⏹ Stop</button>
-        <br/><br/>
+        <button id="recordBtn">🎙️ Start Recording</button>
+        <button id="stopBtn" disabled>⏹️ Stop Recording</button><br><br>
 
-        <input type="file" id="audioFile" accept="audio/*" />
-        <button id="uploadBtn">Upload & Convert</button>
-        <br/><br/>
+        <input type="file" id="audioFile" accept="audio/*">
+        <button id="uploadBtn">Upload & Convert</button><br><br>
 
-        <h3>Transcript:</h3>
-        <div id="transcriptBox" style="white-space: pre-wrap; min-height: 2em; border: 1px solid #ccc; padding: 5px;"></div>
+        <h3>Transcription:</h3>
+        <div id="transcriptBox" style="white-space: pre-wrap; border: 1px solid white; padding: 10px; margin: 10px 0; min-height: 60px; background: #111;"></div><br>
 
-        <h3>Enhanced Audio:</h3>
+        <button id="ttsBtn" disabled>🔊 Synthesize with Piper</button><br>
         <audio id="audioPlayer" controls style="display:none;"></audio>
-        <a id="downloadLink" style="display:none;" download="enhanced.wav">Download Audio</a>
+        <a id="downloadLink" style="display:none;" download="piper_output.wav">⬇️ Download Audio</a>
       </div>
     `;
 
-    const recordBtn = this.querySelector("#recordBtn");
-    const stopBtn = this.querySelector("#stopBtn");
-    const uploadBtn = this.querySelector("#uploadBtn");
-    const audioFile = this.querySelector("#audioFile");
-    const transcriptBox = this.querySelector("#transcriptBox");
-    const audioPlayer = this.querySelector("#audioPlayer");
-    const downloadLink = this.querySelector("#downloadLink");
-    const modelSelect = this.querySelector("#modelSelect");
+    const recordBtn = this.querySelector('#recordBtn');
+    const stopBtn = this.querySelector('#stopBtn');
+    const uploadBtn = this.querySelector('#uploadBtn');
+    const audioFile = this.querySelector('#audioFile');
+    const transcriptBox = this.querySelector('#transcriptBox');
+    const ttsBtn = this.querySelector('#ttsBtn');
+    const modelSelect = this.querySelector('#modelSelect');
+    const audioPlayer = this.querySelector('#audioPlayer');
+    const downloadLink = this.querySelector('#downloadLink');
 
-    let mediaRecorder;
-    let audioChunks = [];
+    let mediaRecorder, audioChunks = [];
 
     recordBtn.onclick = async () => {
       try {
@@ -46,10 +46,9 @@ class SpeechEnhancer extends HTMLElement {
         audioChunks = [];
 
         mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-
-        mediaRecorder.onstop = async () => {
-          const blob = new Blob(audioChunks, { type: 'audio/webm' });
-          await sendAudio(blob);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunks, { type: 'audio/wav' });
+          sendAudio(blob);
         };
 
         mediaRecorder.start();
@@ -57,56 +56,63 @@ class SpeechEnhancer extends HTMLElement {
         stopBtn.disabled = false;
       } catch (err) {
         alert("Microphone access denied.");
-        console.error("Mic access error:", err);
+        console.error(err);
       }
     };
 
     stopBtn.onclick = () => {
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
       }
-      recordBtn.disabled = false;
-      stopBtn.disabled = true;
     };
 
-    uploadBtn.onclick = async () => {
+    uploadBtn.onclick = () => {
       const file = audioFile.files[0];
-      if (!file) {
-        alert("Please select an audio file.");
-        return;
-      }
-      await sendAudio(file);
+      if (file) sendAudio(file);
     };
 
-    async function sendAudio(file) {
+    function sendAudio(blob) {
       const formData = new FormData();
-      formData.append("audio", file);
-      formData.append("model", modelSelect.value);
+      formData.append('audio', blob);
+      formData.append('model', modelSelect.value);
 
-      try {
-        const res = await fetch("https://<your-ngrok-url>/process", {
-          method: "POST",
-          body: formData,
+      transcriptBox.textContent = 'Processing...';
+      ttsBtn.disabled = true;
+      audioPlayer.style.display = 'none';
+      downloadLink.style.display = 'none';
+
+      fetch(`${BACKEND_URL}/transcribe`, { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+          transcriptBox.textContent = data.text || 'No transcription';
+          ttsBtn.disabled = false;
+        })
+        .catch(err => {
+          transcriptBox.textContent = 'Error: ' + err.message;
+          console.error(err);
         });
-        const data = await res.json();
-
-        if (data.transcript) {
-          transcriptBox.innerText = data.transcript;
-        } else {
-          transcriptBox.innerText = "No transcript returned.";
-        }
-
-        if (data.audio_url) {
-          audioPlayer.src = data.audio_url;
-          audioPlayer.style.display = "block";
-          downloadLink.href = data.audio_url;
-          downloadLink.style.display = "inline";
-        }
-      } catch (err) {
-        transcriptBox.innerText = "Error processing audio.";
-        console.error(err);
-      }
     }
+
+    ttsBtn.onclick = () => {
+      const formData = new FormData();
+      formData.append('text', transcriptBox.textContent);
+
+      fetch(`${BACKEND_URL}/synthesize`, { method: 'POST', body: formData })
+        .then(res => res.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          audioPlayer.src = url;
+          audioPlayer.style.display = 'block';
+          downloadLink.href = url;
+          downloadLink.style.display = 'inline';
+        })
+        .catch(err => {
+          alert('Synthesis failed: ' + err.message);
+          console.error(err);
+        });
+    };
   }
 }
 
