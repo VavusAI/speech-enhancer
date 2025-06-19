@@ -1,141 +1,119 @@
-// === Configuration ===
-// 🔄 UPDATE this to your current tunnel URL (copy–paste the full HTTPS address ngrok prints)
-const NGROK_URL = 'https://7b67-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
+from flask import Flask, request, jsonify, send_from_directory, url_for
+from flask_cors import CORS
+import os
+import uuid
+from werkzeug.utils import secure_filename
+import whisper
+from vosk import Model as VoskModel, KaldiRecognizer
+import wave
+import subprocess
+import json
 
-let mediaRecorder = null;
-let audioChunks = [];
-let selectedModel = 'whisper';
-let latestAudioURL = null;
+def synthesize_with_piper(text, output_path):
+    subprocess.run([
+        "./piper",
+        "--model", "en_US-amy-medium.onnx",
+        "--output_file", output_path,
+        "--text", text
+    ], check=True, cwd="models/piper", env={
+        **os.environ,
+        "LD_LIBRARY_PATH": os.path.abspath("models/piper")
+    })
 
-// Inject basic styling
-const style = document.createElement('style');
-style.textContent = `
-  body { font-family: Arial, sans-serif; margin: 20px; max-width: 600px; }
-  button, select, input[type="file"] { margin: 10px 0; display: block; }
-  textarea { width: 100%; height: 100px; margin: 10px 0; }
-  #recording-indicator { color: red; font-weight: bold; margin: 10px 0; display: none; }
-  #download-link { display: none; margin: 10px 0; }
-`;
-document.head.appendChild(style);
+app = Flask(__name__)
 
-// Build UI
-document.body.innerHTML = `
-  <h1>Speech Enhancer</h1>
-  <label for="model-select">Choose Speech-to-Text Model:</label>
-  <select id="model-select">
-    <option value="whisper">Whisper</option>
-    <option value="vosk">Vosk</option>
-  </select>
+# Enable CORS on all routes
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-  <button id="start-recording">🎙️ Start Recording</button>
-  <button id="stop-recording" disabled>⏹️ Stop Recording</button>
-  <div id="recording-indicator">● Recording...</div>
+# Ensure every response has the proper CORS headers
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"]  = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
-  <label for="audio-upload">Or upload an audio file:</label>
-  <input type="file" id="audio-upload" accept="audio/*" />
+# Create upload/output directories
+UPLOAD_FOLDER = 'uploads'
+OUTPUT_FOLDER = 'outputs'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-  <label for="transcript">Transcribed Text:</label>
-  <textarea id="transcript" placeholder="Transcript will appear here..."></textarea>
+# Load models once at startup
+whisper_model = whisper.load_model("base")
+vosk_model    = VoskModel("models/vosk/vosk-model-small-en-us-0.15")
 
-  <button id="play-tts" disabled>▶️ Play Again</button>
-  <a id="download-link">⬇️ Download Piper Audio</a>
-`;
+@app.route('/process', methods=['POST'])
+def process():
+    try:
+        # Receive audio file and selected engine
+        audio  = request.files['audio']
+        engine = request.form.get('engine', 'whisper')
 
-const modelSelect        = document.getElementById('model-select');
-const startBtn           = document.getElementById('start-recording');
-const stopBtn            = document.getElementById('stop-recording');
-const recordingIndicator = document.getElementById('recording-indicator');
-const uploadInput        = document.getElementById('audio-upload');
-const transcriptBox      = document.getElementById('transcript');
-const playBtn            = document.getElementById('play-tts');
-const downloadLink       = document.getElementById('download-link');
+        # Save incoming audio
+        filename   = secure_filename(audio.filename)
+        uid        = uuid.uuid4().hex
+        input_path = os.path.join(UPLOAD_FOLDER, f"{uid}_{filename}")
+        audio.save(input_path)
 
-playBtn.disabled      = true;
-downloadLink.style.display = 'none';
+        # Transcription
+        if engine == 'whisper':
+            result     = whisper_model.transcribe(input_path)
+            transcript = result['text']
 
-// Handlers
-modelSelect.addEventListener('change', () => {
-  selectedModel = modelSelect.value;
-});
+        elif engine == 'vosk':
+            converted_path = input_path + ".wav"
+            subprocess.run([
+                "ffmpeg", "-y", "-i", input_path,
+                "-ar", "16000", "-ac", "1", converted_path
+            ], check=True)
+            wf  = wave.open(converted_path, "rb")
+            rec = KaldiRecognizer(vosk_model, wf.getframerate())
+            transcript = ""
+            while True:
+                data = wf.readframes(4000)
+                if not data:
+                    break
+                if rec.AcceptWaveform(data):
+                    part = json.loads(rec.Result())
+                    transcript += part.get("text", "") + " "
+            wf.close()
 
-startBtn.addEventListener('click', async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
+        else:
+            return jsonify({'error': 'Invalid STT engine'}), 400
 
-    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-    mediaRecorder.onstop        = handleRecordingStop;
+        transcript = transcript.strip()
+        print("Transcript:", transcript)
 
-    mediaRecorder.start();
-    recordingIndicator.style.display = 'block';
-    startBtn.disabled = true;
-    stopBtn.disabled  = false;
-  } catch (err) {
-    console.error('Microphone access error:', err);
-    alert('Cannot access microphone. Please allow permission.');
-  }
-});
+        # Synthesize with Piper
+        out_filename   = f"{uid}.wav"
+        out_audio_path = os.path.join(OUTPUT_FOLDER, out_filename)
+        try:
+            synthesize_with_piper(transcript, out_audio_path)
+        except subprocess.CalledProcessError as e:
+            return jsonify({
+                'error': 'TTS synthesis failed',
+                'details': str(e)
+            }), 500
 
-stopBtn.addEventListener('click', () => {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-  }
-});
+        # Dynamically build URL for the generated file
+        audio_url = url_for('serve_audio', filename=out_filename, _external=True)
 
-uploadInput.addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (file) await sendToBackend(file);
-});
+        return jsonify({
+            'transcript': transcript,
+            'audio_url':  audio_url
+        })
 
-playBtn.addEventListener('click', () => {
-  if (latestAudioURL) new Audio(latestAudioURL).play();
-});
+    except Exception as e:
+        return jsonify({
+            'error':   'Processing failed',
+            'details': str(e)
+        }), 500
 
-async function handleRecordingStop() {
-  recordingIndicator.style.display = 'none';
-  startBtn.disabled            = false;
-  stopBtn.disabled             = true;
+@app.route('/outputs/<filename>')
+def serve_audio(filename):
+    return send_from_directory(OUTPUT_FOLDER, filename)
 
-  const blob = new Blob(audioChunks, { type: 'audio/wav' });
-  await sendToBackend(blob);
-}
-
-async function sendToBackend(audioBlob) {
-  transcriptBox.value        = 'Processing…';
-  playBtn.disabled           = true;
-  downloadLink.style.display = 'none';
-
-  const formData = new FormData();
-  formData.append('audio', audioBlob);
-  formData.append('engine', selectedModel);
-
-  try {
-    const resp = await fetch(`${NGROK_URL}/process`, {
-      method: 'POST',
-      body: formData
-    });
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(`HTTP ${resp.status}: ${errText || resp.statusText}`);
-    }
-    const data = await resp.json();
-    transcriptBox.value = data.transcript || '';
-
-    if (!data.audio_url) {
-      throw new Error('No audio_url returned by server');
-    }
-
-    latestAudioURL    = data.audio_url;
-    playBtn.disabled  = false;
-    downloadLink.href = data.audio_url;
-    downloadLink.download = 'piper_output.wav';
-    downloadLink.style.display = 'inline';
-    new Audio(data.audio_url).play();
-
-  } catch (err) {
-    console.error('Backend error:', err);
-    transcriptBox.value = `Error: ${err.message}`;
-    alert(`Error processing audio:\n${err.message}`);
-  }
-}
+if __name__ == '__main__':
+    # Listen on all interfaces so ngrok can reach it
+    app.run(debug=True, host='0.0.0.0', port=5000)
