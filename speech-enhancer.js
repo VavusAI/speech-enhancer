@@ -24,7 +24,7 @@ document.body.innerHTML = `
   <label for="transcript">Transcribed Text:</label>
   <textarea id="transcript" placeholder="Transcript will appear here..." style="width:100%;height:100px;"></textarea>
 
-  <button id="play-tts">▶️ Play with Piper</button>
+  <button id="play-tts">▶️ Play Again</button>
   <a id="download-link" style="display:none;" href="#">⬇️ Download Piper Audio</a>
 `;
 
@@ -36,6 +36,8 @@ const transcriptBox = document.getElementById('transcript');
 const modelSelect = document.getElementById('model-select');
 const playBtn = document.getElementById('play-tts');
 const downloadLink = document.getElementById('download-link');
+
+let latestAudioURL = null;
 
 // === Event Handlers ===
 modelSelect.addEventListener('change', () => {
@@ -72,38 +74,38 @@ uploadInput.addEventListener('change', async (event) => {
   }
 });
 
-playBtn.addEventListener('click', async () => {
-  const text = transcriptBox.value.trim();
-  if (!text) return;
-
-  const response = await fetch(`${NGROK_URL}/speak`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text })
-  });
-
-  const blob = await response.blob();
-  const audioUrl = URL.createObjectURL(blob);
-
-  const audio = new Audio(audioUrl);
-  audio.play();
-
-  downloadLink.href = audioUrl;
-  downloadLink.download = 'piper_output.wav';
-  downloadLink.style.display = 'inline';
+playBtn.addEventListener('click', () => {
+  if (latestAudioURL) {
+    const audio = new Audio(latestAudioURL);
+    audio.play();
+  }
 });
 
 // === Helper Functions ===
 async function sendToBackend(audioBlob) {
   const formData = new FormData();
   formData.append('audio', audioBlob);
-  formData.append('model', selectedModel);
+  formData.append('engine', selectedModel);
 
-  const response = await fetch(`${NGROK_URL}/transcribe`, {
+  const response = await fetch(`${NGROK_URL}/process`, {
     method: 'POST',
     body: formData
   });
 
   const data = await response.json();
+
   transcriptBox.value = data.transcript || '[No transcription received]';
+
+  if (data.audio_url) {
+    latestAudioURL = data.audio_url;
+
+    const audio = new Audio(latestAudioURL);
+    audio.play();
+
+    downloadLink.href = latestAudioURL;
+    downloadLink.download = 'piper_output.wav';
+    downloadLink.style.display = 'inline';
+  } else {
+    downloadLink.style.display = 'none';
+  }
 }
