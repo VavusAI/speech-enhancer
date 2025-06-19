@@ -1,6 +1,6 @@
 // === Configuration ===
 // 🔄 UPDATE this to your current tunnel URL (copy–paste the full HTTPS address ngrok prints)
-const NGROK_URL = 'https://334d-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
+const NGROK_URL = 'https://7b67-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
 
 let mediaRecorder = null;
 let audioChunks = [];
