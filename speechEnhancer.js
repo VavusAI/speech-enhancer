@@ -1,3 +1,5 @@
+console.log("✅ SpeechEnhancer.js loaded with BACKEND_URL =", BACKEND_URL);
+
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
     this.innerHTML = `
