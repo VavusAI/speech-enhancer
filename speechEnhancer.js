@@ -1,5 +1,3 @@
-console.log("✅ SpeechEnhancer.js loaded with BACKEND_URL =", BACKEND_URL);
-
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
     this.innerHTML = `
@@ -38,6 +36,8 @@ class SpeechEnhancer extends HTMLElement {
     const downloadLink = this.querySelector('#downloadLink');
 
     const BACKEND_URL = 'https://9d1d-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
+    console.log("✅ SpeechEnhancer.js loaded with BACKEND_URL =", BACKEND_URL);
+
     let mediaRecorder, audioChunks = [];
 
     recordBtn.onclick = async () => {
