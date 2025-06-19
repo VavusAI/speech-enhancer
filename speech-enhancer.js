@@ -1,11 +1,11 @@
 // === Configuration ===
-// 🔄 Update this to your current ngrok HTTPS URL (copy–paste the full forwarding address)
-const NGROK_URL = 'https://080c-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
+// 🔄 Copy–paste your current ngrok HTTPS URL here:
+const NGROK_URL = 'https://334d-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
 
 let mediaRecorder = null;
 let audioChunks = [];
 let selectedModel = 'whisper';
-let latestAudioURL = null;
+let latestBlobURL = null;
 
 // Inject basic styling
 const style = document.createElement('style');
@@ -21,6 +21,7 @@ document.head.appendChild(style);
 // Build UI
 document.body.innerHTML = `
   <h1>Speech Enhancer</h1>
+
   <label for="model-select">Choose STT Model:</label>
   <select id="model-select">
     <option value="whisper">Whisper</option>
@@ -55,7 +56,6 @@ stopBtn.disabled      = true;
 playBtn.disabled      = true;
 downloadLink.style.display = 'none';
 
-// Event listeners
 modelSelect.addEventListener('change', () => {
   selectedModel = modelSelect.value;
 });
@@ -91,10 +91,12 @@ uploadInput.addEventListener('change', async e => {
 });
 
 playBtn.addEventListener('click', () => {
-  if (latestAudioURL) new Audio(latestAudioURL).play();
+  if (latestBlobURL) {
+    new Audio(latestBlobURL).play();
+  }
 });
 
-// Helper: called when recording stops
+// Called when recording stops
 async function handleRecordingStop() {
   recordingIndicator.style.display = 'none';
   startBtn.disabled  = false;
@@ -104,7 +106,7 @@ async function handleRecordingStop() {
   await sendToBackend(blob);
 }
 
-// Send audio to backend /process endpoint
+// Send audio to /process, then fetch back the WAV, play + download
 async function sendToBackend(audioBlob) {
   transcriptBox.value        = 'Processing…';
   playBtn.disabled           = true;
@@ -115,28 +117,41 @@ async function sendToBackend(audioBlob) {
   formData.append('engine', selectedModel);
 
   try {
+    // 1) Transcribe + trigger TTS
     const resp = await fetch(`${NGROK_URL}/process`, {
       method: 'POST',
       body: formData
     });
     if (!resp.ok) {
       const errText = await resp.text();
-      throw new Error(`HTTP ${resp.status}: ${errText || resp.statusText}`);
+      throw new Error(`STT/TTS HTTP ${resp.status}: ${errText||resp.statusText}`);
     }
     const data = await resp.json();
+    console.log('Server response:', data);
     transcriptBox.value = data.transcript || '';
 
     if (!data.audio_url) {
       throw new Error('No audio_url returned by server');
     }
-    latestAudioURL    = data.audio_url;
+
+    // 2) Fetch the generated WAV directly
+    const audioResp = await fetch(data.audio_url);
+    if (!audioResp.ok) {
+      throw new Error(`Audio fetch HTTP ${audioResp.status}`);
+    }
+    const audioBlob = await audioResp.blob();
+    const blobURL = URL.createObjectURL(audioBlob);
+    latestBlobURL = blobURL;
+
+    // 3) Play & expose download link
+    new Audio(blobURL).play();
     playBtn.disabled  = false;
-    downloadLink.href = data.audio_url;
+    downloadLink.href = blobURL;
     downloadLink.download = 'piper_output.wav';
     downloadLink.style.display = 'inline';
-    new Audio(data.audio_url).play();
+
   } catch (err) {
-    console.error('Backend error:', err);
+    console.error('sendToBackend error:', err);
     transcriptBox.value = `Error: ${err.message}`;
     alert(`Error processing audio:\n${err.message}`);
   }
