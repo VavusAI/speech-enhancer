@@ -44,7 +44,7 @@
     const audioPlayer = document.getElementById('audioPlayer');
     const downloadLink = document.getElementById('downloadLink');
 
-    const BACKEND_URL = 'https://351a-2a02-2f0b-a209-2500-3adb-d7b8-9750-98.ngrok-free.app';
+    const BACKEND_URL = 'http://127.0.0.1:5000'; // hardcoded inside JS
 
     recordBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
