@@ -1,3 +1,4 @@
+// speech-enhancer.js
 // === Configuration ===
 const NGROK_URL = 'https://267b-2a02-2f0b-a209-2500-2b52-36b2-387d-62.ngrok-free.app';
 
@@ -6,10 +7,18 @@ let audioChunks = [];
 let selectedModel = 'whisper';
 let latestAudioURL = null;
 
+// === Inject Styling ===
+const style = document.createElement('style');
+style.textContent = `
+  body { font-family: Arial, sans-serif; margin: 20px; max-width: 600px; }
+  button, select, input[type="file"] { margin: 10px 0; display: block; }
+  textarea { width: 100%; height: 100px; margin: 10px 0; }
+  #recording-indicator { color: red; font-weight: bold; margin: 10px 0; display: none; }
+  #download-link { display: none; margin: 10px 0; }
+`;
+document.head.appendChild(style);
+
 // === Build UI Dynamically ===
-document.body.style.fontFamily = 'Arial, sans-serif';
-document.body.style.margin = '20px';
-document.body.style.maxWidth = '600px';
 document.body.innerHTML = `
   <h1>Speech Enhancer</h1>
 
@@ -20,31 +29,33 @@ document.body.innerHTML = `
   </select>
 
   <button id="start-recording">🎙️ Start Recording</button>
-  <button id="stop-recording">⏹️ Stop Recording</button>
-  <div id="recording-indicator" style="display:none; color:red; margin:10px 0;">● Recording...</div>
+  <button id="stop-recording" disabled>⏹️ Stop Recording</button>
+  <div id="recording-indicator">● Recording...</div>
 
   <label for="audio-upload">Or upload an audio file:</label>
   <input type="file" id="audio-upload" accept="audio/*" />
 
   <label for="transcript">Transcribed Text:</label>
-  <textarea id="transcript" placeholder="Transcript will appear here..." style="width:100%;height:100px;"></textarea>
+  <textarea id="transcript" placeholder="Transcript will appear here..."></textarea>
 
-  <button id="play-tts">▶️ Play Again</button>
-  <a id="download-link" style="display:none;" href="#">⬇️ Download Piper Audio</a>
+  <button id="play-tts" disabled>▶️ Play Again</button>
+  <a id="download-link">⬇️ Download Piper Audio</a>
 `;
 
 // === DOM References ===
-const modelSelect = document.getElementById('model-select');
-const startBtn = document.getElementById('start-recording');
-const stopBtn = document.getElementById('stop-recording');
-const recordingIndicator = document.getElementById('recording-indicator');
-const uploadInput = document.getElementById('audio-upload');
-const transcriptBox = document.getElementById('transcript');
-const playBtn = document.getElementById('play-tts');
-const downloadLink = document.getElementById('download-link');
+const modelSelect         = document.getElementById('model-select');
+const startBtn            = document.getElementById('start-recording');
+const stopBtn             = document.getElementById('stop-recording');
+const recordingIndicator  = document.getElementById('recording-indicator');
+const uploadInput         = document.getElementById('audio-upload');
+const transcriptBox       = document.getElementById('transcript');
+const playBtn             = document.getElementById('play-tts');
+const downloadLink        = document.getElementById('download-link');
 
-// Initial UI state
-stopBtn.disabled = true;
+// === Initial UI State ===
+stopBtn.disabled      = true;
+playBtn.disabled      = true;
+downloadLink.style.display = 'none';
 
 // === Event Handlers ===
 modelSelect.addEventListener('change', () => {
@@ -57,30 +68,16 @@ startBtn.addEventListener('click', async () => {
     mediaRecorder = new MediaRecorder(stream);
     audioChunks = [];
 
-    mediaRecorder.ondataavailable = event => {
-      audioChunks.push(event.data);
-    };
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = handleRecordingStop;
 
-    mediaRecorder.onstop = async () => {
-      // Hide recording indicator & reset buttons
-      recordingIndicator.style.display = 'none';
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-
-      // Send recorded audio
-      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-      await sendToBackend(audioBlob);
-    };
-
-    // Start recording & update UI
     mediaRecorder.start();
     recordingIndicator.style.display = 'block';
     startBtn.disabled = true;
     stopBtn.disabled = false;
-
   } catch (err) {
-    console.error('Error accessing microphone:', err);
-    alert('Could not access microphone. Please check permissions.');
+    console.error('Microphone access error:', err);
+    alert('Cannot access microphone. Please allow permission.');
   }
 });
 
@@ -90,8 +87,8 @@ stopBtn.addEventListener('click', () => {
   }
 });
 
-uploadInput.addEventListener('change', async (event) => {
-  const file = event.target.files[0];
+uploadInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
   if (file) {
     await sendToBackend(file);
   }
@@ -99,23 +96,37 @@ uploadInput.addEventListener('change', async (event) => {
 
 playBtn.addEventListener('click', () => {
   if (latestAudioURL) {
-    const audio = new Audio(latestAudioURL);
-    audio.play();
+    new Audio(latestAudioURL).play();
   }
 });
 
 // === Helper Functions ===
+async function handleRecordingStop() {
+  recordingIndicator.style.display = 'none';
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+
+  const blob = new Blob(audioChunks, { type: 'audio/wav' });
+  await sendToBackend(blob);
+}
+
 async function sendToBackend(audioBlob) {
+  // Reset UI
+  transcriptBox.value = 'Processing...';
+  playBtn.disabled = true;
+  downloadLink.style.display = 'none';
+
   const formData = new FormData();
   formData.append('audio', audioBlob);
   formData.append('engine', selectedModel);
 
   try {
-    const response = await fetch(`${NGROK_URL}/process`, {
+    const resp = await fetch(`${NGROK_URL}/process`, {
       method: 'POST',
       body: formData
     });
-    const data = await response.json();
+    if (!resp.ok) throw new Error(`Server responded ${resp.status}`);
+    const data = await resp.json();
 
     // Update transcript
     transcriptBox.value = data.transcript || '[No transcription received]';
@@ -123,18 +134,14 @@ async function sendToBackend(audioBlob) {
     // Handle Piper audio
     if (data.audio_url) {
       latestAudioURL = data.audio_url;
-      const audio = new Audio(latestAudioURL);
-      audio.play();
-
+      playBtn.disabled = false;
       downloadLink.href = latestAudioURL;
       downloadLink.download = 'piper_output.wav';
       downloadLink.style.display = 'inline';
-    } else {
-      downloadLink.style.display = 'none';
     }
-
   } catch (err) {
-    console.error('Error communicating with backend:', err);
-    alert('Failed to process audio.');
+    console.error('Backend error:', err);
+    alert('Error processing audio. Check console for details.');
+    transcriptBox.value = '';
   }
 }
