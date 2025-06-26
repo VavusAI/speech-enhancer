@@ -1,4 +1,4 @@
-const BACKEND_URL = "https://sharp-louse-curiously.ngrok-free.app";
+const BACKEND_URL = "https://df9e-2a02-2f0b-a209-2500-a78-bf42-b5f5-98fa.ngrok-free.app";
 
 class SpeechEnhancer extends HTMLElement {
   connectedCallback() {
